@@ -3,7 +3,6 @@ services:
     name: probanker-server
     env: python
     plan: free
-    region: oregon
     buildCommand: pip install -r requirements.txt
     startCommand: python server.py
     envVars:
@@ -15,5 +14,4 @@ services:
 databases:
   - name: probanker-db
     plan: free
-    region: oregon
     postgresMajorVersion: 15
