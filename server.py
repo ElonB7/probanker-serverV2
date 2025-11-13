@@ -1,36 +1,24 @@
 from flask import Flask, request, jsonify
 import hashlib, os
-import psycopg2
+import json
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATEIPFAD = "konten.json"
 
-conn = psycopg2.connect(DATABASE_URL, sslmode="require")
-cursor = conn.cursor()
+# Beim Start laden
+if os.path.exists(DATEIPFAD):
+    with open(DATEIPFAD, "r") as f:
+        nutzer_db = json.load(f)
+else:
+    nutzer_db = {}
 
 app = Flask(__name__)
-nutzer_db = {}  # Format: {name: {"passwort": hash, "kontostand": 0.0, "level": "LVL 1"}}
 
 def hash_passwort(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS nutzer (
-    name TEXT PRIMARY KEY,
-    passwort TEXT,
-    kontostand REAL,
-    level TEXT
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS eingänge (
-    empfänger TEXT,
-    absender TEXT,
-    betrag REAL
-)
-""")
-
-conn.commit()
+def speichere_nutzer_db():
+    with open(DATEIPFAD, "w") as f:
+        json.dump(nutzer_db, f, indent=2)
 
 @app.route("/register", methods=["POST"])
 def register():
@@ -45,9 +33,9 @@ def register():
         "passwort": hash_passwort(pw),
         "kontostand": 0.0,
         "level": "LVL 1",
-        "eingänge": []  # ← wichtig für Multiplayer-Banking
+        "eingänge": []
     }
-
+    speichere_nutzer_db()
     return jsonify({"status": "ok", "msg": "Registrierung erfolgreich!"})
 
 @app.route("/login", methods=["POST"])
@@ -70,6 +58,7 @@ def update_stats():
         return jsonify({"status": "error", "msg": "Authentifizierung fehlgeschlagen!"})
     user["kontostand"] = data["kontostand"]
     user["level"] = data["level"]
+    speichere_nutzer_db()
     return jsonify({"status": "ok"})
 
 @app.route("/send_money", methods=["POST"])
@@ -96,18 +85,12 @@ def send_money():
     if nutzer_db[sender]["kontostand"] < betrag:
         return jsonify({"status": "error", "msg": "❌ Nicht genug Guthaben!"})
 
-    # Geld abziehen
     nutzer_db[sender]["kontostand"] -= betrag
-
-    # Überweisung beim Empfänger speichern
-    if "eingänge" not in nutzer_db[empfänger]:
-        nutzer_db[empfänger]["eingänge"] = []
-
-    nutzer_db[empfänger]["eingänge"].append({
+    nutzer_db[empfänger].setdefault("eingänge", []).append({
         "absender": sender,
         "betrag": betrag
     })
-
+    speichere_nutzer_db()
     return jsonify({"status": "ok", "msg": "✅ Geld erfolgreich gesendet!"})
 
 @app.route("/incoming/<name>", methods=["GET"])
@@ -116,8 +99,8 @@ def incoming(name):
         return jsonify({"status": "error", "msg": "❌ Spieler nicht gefunden!"})
 
     eingänge = nutzer_db[name].get("eingänge", [])
-    nutzer_db[name]["eingänge"] = []  # nach Abruf löschen
-
+    nutzer_db[name]["eingänge"] = []
+    speichere_nutzer_db()
     return jsonify({"status": "ok", "eingänge": eingänge})
 
 @app.route("/change_password", methods=["POST"])
@@ -130,6 +113,7 @@ def change_password():
     if not user or user["passwort"] != hash_passwort(old_pw):
         return jsonify({"status": "error", "msg": "Falsches Passwort!"})
     user["passwort"] = hash_passwort(new_pw)
+    speichere_nutzer_db()
     return jsonify({"status": "ok", "msg": "Passwort geändert!"})
 
 @app.route("/leaderboard", methods=["GET"])
