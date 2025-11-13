@@ -2,9 +2,10 @@ services:
   - type: web
     name: probanker-server
     env: python
+    plan: free
+    region: oregon
     buildCommand: pip install -r requirements.txt
     startCommand: python server.py
-    autoDeploy: true
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -14,4 +15,5 @@ services:
 databases:
   - name: probanker-db
     plan: free
-    env: python
+    region: oregon
+    postgresMajorVersion: 15
