@@ -1,0 +1,77 @@
+{
+  "kontostand": 1266.1999999999998,
+  "transaktionen": [
+    {
+      "beschreibung": "Startguthaben",
+      "betrag": 0.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "Verkauft: ElonCoin",
+      "betrag": 114.73
+    },
+    {
+      "beschreibung": "Verkauft: BroToken",
+      "betrag": 46.2
+    },
+    {
+      "beschreibung": "Verkauft: MemeStock",
+      "betrag": 207.17
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "\u00dcberweisung an rel",
+      "betrag": -20.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "\u00dcberweisung von Elon",
+      "betrag": 20.0
+    },
+    {
+      "beschreibung": "ElonPro Belohnung",
+      "betrag": 50.0
+    },
+    {
+      "beschreibung": "\u00dcberweisung an Elon",
+      "betrag": -20.0
+    }
+  ]
+}
