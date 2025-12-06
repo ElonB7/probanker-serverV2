@@ -57,6 +57,10 @@ class ChatMessage(db.Model):
     msg = db.Column(db.Text, nullable=False)
     zeit = db.Column(db.DateTime, default=datetime.utcnow)
 
+@app.before_first_request
+def init_db():
+    db.create_all()
+
 
 # Speicher für Chat-Nachrichten
 chat_messages = []
