@@ -44,6 +44,9 @@ def register():
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
 db = SQLAlchemy(app)
 
+with app.app_context():
+    db.create_all()
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
@@ -56,10 +59,6 @@ class ChatMessage(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     msg = db.Column(db.Text, nullable=False)
     zeit = db.Column(db.DateTime, default=datetime.utcnow)
-
-@app.before_first_request
-def init_db():
-    db.create_all()
 
 
 # Speicher für Chat-Nachrichten
