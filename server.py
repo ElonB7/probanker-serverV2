@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
 import hashlib, os
 import json
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
 
 DATEIPFAD = "konten.json"
 
@@ -39,7 +41,22 @@ def register():
     speichere_nutzer_db()
     return jsonify({"status": "ok", "msg": "Registrierung erfolgreich!"})
 
-from datetime import datetime
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
+db = SQLAlchemy(app)
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    passwort = db.Column(db.String(64), nullable=False)
+    kontostand = db.Column(db.Float, default=0.0)
+    level = db.Column(db.String(20), default="LVL 1")
+
+class ChatMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    msg = db.Column(db.Text, nullable=False)
+    zeit = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 # Speicher für Chat-Nachrichten
 chat_messages = []
