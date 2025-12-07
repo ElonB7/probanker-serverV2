@@ -22,24 +22,20 @@ def speichere_nutzer_db():
     with open(DATEIPFAD, "w") as f:
         json.dump(nutzer_db, f, indent=2)
 
-@app.route("/register", methods=["POST"])
+@app.route('/register', methods=['POST'])
 def register():
-    data = request.json
-    name = data["name"]
-    pw = data["passwort"]
+    data = request.get_json()
+    name = data.get('name')
+    passwort = data.get('passwort')
 
-    if name in nutzer_db:
-        return jsonify({"status": "error", "msg": "Name existiert bereits!"})
+    if User.query.filter_by(name=name).first():
+        return jsonify({'success': False, 'message': 'Benutzername existiert bereits.'}), 409
 
-    nutzer_db[name] = {
-        "passwort": hash_passwort(pw),
-        "kontostand": 0.0,
-        "level": "LVL 1",
-        "eingänge": [],
-        "skin": None   # 🔥 Skin-Feld direkt mit anlegen
-    }
-    speichere_nutzer_db()
-    return jsonify({"status": "ok", "msg": "Registrierung erfolgreich!"})
+    new_user = User(name=name, passwort=passwort)
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': 'Registrierung erfolgreich.'}), 201
 
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
 db = SQLAlchemy(app)
@@ -47,12 +43,14 @@ db = SQLAlchemy(app)
 with app.app_context():
     db.create_all()
 
+db = SQLAlchemy()
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), unique=True, nullable=False)
-    passwort = db.Column(db.String(64), nullable=False)
-    kontostand = db.Column(db.Float, default=0.0)
-    level = db.Column(db.String(20), default="LVL 1")
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    passwort = db.Column(db.String(120), nullable=False)
+    kontostand = db.Column(db.Integer, default=1000)
+
 
 class ChatMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -91,21 +89,17 @@ def chat_post():
 def chat_get():
     return jsonify({"messages": chat_messages[-50:]})  # nur die letzten 50 anzeigen
 
-@app.route("/login", methods=["POST"])
+@app.route('/login', methods=['POST'])
 def login():
-    data = request.json
-    name = data["name"]
-    pw = data["passwort"]
-    user = nutzer_db.get(name)
-    if not user or user["passwort"] != hash_passwort(pw):
-        return jsonify({"status": "error", "msg": "Login fehlgeschlagen!"})
-    return jsonify({
-        "status": "ok",
-        "msg": "Login erfolgreich!",
-        "kontostand": user["kontostand"],
-        "level": user["level"],
-        "skin": user.get("skin")   # 🔥 Skin mit zurückgeben
-    })
+    data = request.get_json()
+    name = data.get('name')
+    passwort = data.get('passwort')
+
+    user = User.query.filter_by(name=name, passwort=passwort).first()
+    if user:
+        return jsonify({'success': True, 'message': 'Login erfolgreich.', 'kontostand': user.kontostand}), 200
+    else:
+        return jsonify({'success': False, 'message': 'Ungültige Zugangsdaten.'}), 401
 
 @app.route("/update_stats", methods=["POST"])
 def update_stats():
