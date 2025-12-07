@@ -1,26 +1,43 @@
 from flask import Flask, request, jsonify
-import hashlib, os
-import json
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-
-DATEIPFAD = "konten.json"
-
-# Beim Start laden
-if os.path.exists(DATEIPFAD):
-    with open(DATEIPFAD, "r") as f:
-        nutzer_db = json.load(f)
-else:
-    nutzer_db = {}
+import hashlib
+import os
 
 app = Flask(__name__)
 
+# Datenbank-URL von Render (z. B. postgres://...)
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db = SQLAlchemy(app)
+
+# Passwort-Hashing
 def hash_passwort(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
-def speichere_nutzer_db():
-    with open(DATEIPFAD, "w") as f:
-        json.dump(nutzer_db, f, indent=2)
+# --------------------
+# Datenbank-Modelle
+# --------------------
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    passwort = db.Column(db.String(120), nullable=False)
+    kontostand = db.Column(db.Integer, default=1000)
+    level = db.Column(db.Integer, default=1)
+    skin = db.Column(db.String(80), nullable=True)
+
+class ChatMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    msg = db.Column(db.Text, nullable=False)
+    zeit = db.Column(db.DateTime, default=datetime.utcnow)
+
+with app.app_context():
+    db.create_all()
+
+# --------------------
+# Routes
+# --------------------
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -31,36 +48,31 @@ def register():
     if User.query.filter_by(name=name).first():
         return jsonify({'success': False, 'message': 'Benutzername existiert bereits.'}), 409
 
-    new_user = User(name=name, passwort=passwort)
+    new_user = User(name=name, passwort=hash_passwort(passwort))
     db.session.add(new_user)
     db.session.commit()
 
     return jsonify({'success': True, 'message': 'Registrierung erfolgreich.'}), 201
 
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-db = SQLAlchemy(app)
 
-with app.app_context():
-    db.create_all()
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    name = data.get('name')
+    passwort = data.get('passwort')
 
-db = SQLAlchemy()
+    user = User.query.filter_by(name=name, passwort=hash_passwort(passwort)).first()
+    if user:
+        return jsonify({
+            'success': True,
+            'message': 'Login erfolgreich.',
+            'kontostand': user.kontostand,
+            'level': user.level,
+            'skin': user.skin
+        }), 200
+    else:
+        return jsonify({'success': False, 'message': 'Ungültige Zugangsdaten.'}), 401
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(80), unique=True, nullable=False)
-    passwort = db.Column(db.String(120), nullable=False)
-    kontostand = db.Column(db.Integer, default=1000)
-
-
-class ChatMessage(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
-    msg = db.Column(db.Text, nullable=False)
-    zeit = db.Column(db.DateTime, default=datetime.utcnow)
-
-
-# Speicher für Chat-Nachrichten
-chat_messages = []
 
 @app.route("/chat", methods=["POST"])
 def chat_post():
@@ -69,59 +81,45 @@ def chat_post():
     pw = data["passwort"]
     msg = data["msg"]
 
-    user = nutzer_db.get(name)
-    if not user or user["passwort"] != hash_passwort(pw):
+    user = User.query.filter_by(name=name, passwort=hash_passwort(pw)).first()
+    if not user:
         return jsonify({"status": "error", "msg": "Authentifizierung fehlgeschlagen!"})
 
-    chat_messages.append({
-        "name": name,
-        "msg": msg,
-        "zeit": datetime.now().strftime("%H:%M:%S")
-    })
-
-    # Nur die letzten 100 Nachrichten behalten
-    if len(chat_messages) > 100:
-        chat_messages.pop(0)
+    chat_msg = ChatMessage(user_id=user.id, msg=msg)
+    db.session.add(chat_msg)
+    db.session.commit()
 
     return jsonify({"status": "ok"})
 
+
 @app.route("/chat", methods=["GET"])
 def chat_get():
-    return jsonify({"messages": chat_messages[-50:]})  # nur die letzten 50 anzeigen
+    messages = ChatMessage.query.order_by(ChatMessage.zeit.desc()).limit(50).all()
+    return jsonify([{
+        "name": User.query.get(m.user_id).name,
+        "msg": m.msg,
+        "zeit": m.zeit.strftime("%H:%M:%S")
+    } for m in reversed(messages)])
 
-@app.route('/login', methods=['POST'])
-def login():
-    data = request.get_json()
-    name = data.get('name')
-    passwort = data.get('passwort')
-
-    user = User.query.filter_by(name=name, passwort=passwort).first()
-    if user:
-        return jsonify({'success': True, 'message': 'Login erfolgreich.', 'kontostand': user.kontostand}), 200
-    else:
-        return jsonify({'success': False, 'message': 'Ungültige Zugangsdaten.'}), 401
 
 @app.route("/update_stats", methods=["POST"])
 def update_stats():
     data = request.json
     name = data["name"]
     pw = data["passwort"]
-    user = nutzer_db.get(name)
 
-    # Authentifizierung prüfen
-    if not user or user["passwort"] != hash_passwort(pw):
+    user = User.query.filter_by(name=name, passwort=hash_passwort(pw)).first()
+    if not user:
         return jsonify({"status": "error", "msg": "Authentifizierung fehlgeschlagen!"})
 
-    # Standardwerte aktualisieren
-    user["kontostand"] = data["kontostand"]
-    user["level"] = data["level"]
-
-    # 🔥 Skin übernehmen, falls vorhanden
+    user.kontostand = data.get("kontostand", user.kontostand)
+    user.level = data.get("level", user.level)
     if "skin" in data:
-        user["skin"] = data["skin"]
+        user.skin = data["skin"]
 
-    speichere_nutzer_db()
+    db.session.commit()
     return jsonify({"status": "ok"})
+
 
 @app.route("/send_money", methods=["POST"])
 def send_money():
@@ -131,39 +129,24 @@ def send_money():
     betrag = data.get("betrag")
     passwort = data.get("passwort")
 
-    if sender not in nutzer_db:
-        return jsonify({"status": "error", "msg": "❌ Sender existiert nicht!"})
+    sender_user = User.query.filter_by(name=sender, passwort=hash_passwort(passwort)).first()
+    empfänger_user = User.query.filter_by(name=empfänger).first()
 
-    gespeichertes_hash = nutzer_db[sender]["passwort"]
-    if gespeichertes_hash != hash_passwort(passwort):
-        return jsonify({"status": "error", "msg": "❌ Passwort falsch!"})
-
-    if empfänger not in nutzer_db:
+    if not sender_user:
+        return jsonify({"status": "error", "msg": "❌ Sender existiert nicht oder Passwort falsch!"})
+    if not empfänger_user:
         return jsonify({"status": "error", "msg": "❌ Empfänger existiert nicht!"})
-
     if not isinstance(betrag, (int, float)) or betrag <= 0:
         return jsonify({"status": "error", "msg": "❌ Ungültiger Betrag!"})
-
-    if nutzer_db[sender]["kontostand"] < betrag:
+    if sender_user.kontostand < betrag:
         return jsonify({"status": "error", "msg": "❌ Nicht genug Guthaben!"})
 
-    nutzer_db[sender]["kontostand"] -= betrag
-    nutzer_db[empfänger].setdefault("eingänge", []).append({
-        "absender": sender,
-        "betrag": betrag
-    })
-    speichere_nutzer_db()
+    sender_user.kontostand -= betrag
+    empfänger_user.kontostand += betrag
+    db.session.commit()
+
     return jsonify({"status": "ok", "msg": "✅ Geld erfolgreich gesendet!"})
 
-@app.route("/incoming/<name>", methods=["GET"])
-def incoming(name):
-    if name not in nutzer_db:
-        return jsonify({"status": "error", "msg": "❌ Spieler nicht gefunden!"})
-
-    eingänge = nutzer_db[name].get("eingänge", [])
-    nutzer_db[name]["eingänge"] = []
-    speichere_nutzer_db()
-    return jsonify({"status": "ok", "eingänge": eingänge})
 
 @app.route("/change_password", methods=["POST"])
 def change_password():
@@ -171,23 +154,27 @@ def change_password():
     name = data["name"]
     old_pw = data["old"]
     new_pw = data["new"]
-    user = nutzer_db.get(name)
-    if not user or user["passwort"] != hash_passwort(old_pw):
+
+    user = User.query.filter_by(name=name, passwort=hash_passwort(old_pw)).first()
+    if not user:
         return jsonify({"status": "error", "msg": "Falsches Passwort!"})
-    user["passwort"] = hash_passwort(new_pw)
-    speichere_nutzer_db()
+
+    user.passwort = hash_passwort(new_pw)
+    db.session.commit()
     return jsonify({"status": "ok", "msg": "Passwort geändert!"})
+
 
 @app.route("/leaderboard", methods=["GET"])
 def leaderboard():
+    users = User.query.order_by(User.kontostand.desc()).all()
     return jsonify({
-        name: {
-            "kontostand": user["kontostand"],
-            "level": user["level"],
-            "skin": user.get("skin", None)  # 🔥 Skin bleibt erhalten
-        }
-        for name, user in nutzer_db.items()
+        u.name: {
+            "kontostand": u.kontostand,
+            "level": u.level,
+            "skin": u.skin
+        } for u in users
     })
+
 
 port = int(os.environ.get("PORT", 5000))
 app.run(host="0.0.0.0", port=port)
