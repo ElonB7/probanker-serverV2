@@ -32,6 +32,14 @@ class ChatMessage(db.Model):
     msg = db.Column(db.Text, nullable=False)
     zeit = db.Column(db.DateTime, default=datetime.utcnow)
 
+class Transaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sender_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    receiver_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    betrag = db.Column(db.Float, nullable=False)
+    zeit = db.Column(db.DateTime, default=datetime.utcnow)
+    abgeholt = db.Column(db.Boolean, default=False)
+
 with app.app_context():
     db.create_all()
 
@@ -120,6 +128,26 @@ def update_stats():
     db.session.commit()
     return jsonify({"status": "ok"})
 
+@app.route("/incoming/<name>", methods=["GET"])
+def incoming(name):
+    user = User.query.filter_by(name=name).first()
+    if not user:
+        return jsonify({"status": "error", "msg": "❌ Spieler nicht gefunden!"})
+
+    eingänge = Transaction.query.filter_by(receiver_id=user.id, abgeholt=False).all()
+
+    result = []
+    for t in eingänge:
+        sender = User.query.get(t.sender_id)
+        result.append({
+            "absender": sender.name if sender else "Unbekannt",
+            "betrag": t.betrag,
+            "zeit": t.zeit.strftime("%H:%M:%S")
+        })
+        t.abgeholt = True  # nach Abruf als "gesehen" markieren
+
+    db.session.commit()
+    return jsonify({"status": "ok", "eingänge": result})
 
 @app.route("/send_money", methods=["POST"])
 def send_money():
@@ -132,17 +160,17 @@ def send_money():
     sender_user = User.query.filter_by(name=sender, passwort=hash_passwort(passwort)).first()
     empfänger_user = User.query.filter_by(name=empfänger).first()
 
-    if not sender_user:
-        return jsonify({"status": "error", "msg": "❌ Sender existiert nicht oder Passwort falsch!"})
-    if not empfänger_user:
-        return jsonify({"status": "error", "msg": "❌ Empfänger existiert nicht!"})
-    if not isinstance(betrag, (int, float)) or betrag <= 0:
-        return jsonify({"status": "error", "msg": "❌ Ungültiger Betrag!"})
+    if not sender_user or not empfänger_user:
+        return jsonify({"status": "error", "msg": "❌ Sender oder Empfänger nicht gefunden!"})
     if sender_user.kontostand < betrag:
         return jsonify({"status": "error", "msg": "❌ Nicht genug Guthaben!"})
 
     sender_user.kontostand -= betrag
     empfänger_user.kontostand += betrag
+
+    # Neue Transaktion speichern
+    t = Transaction(sender_id=sender_user.id, receiver_id=empfänger_user.id, betrag=betrag)
+    db.session.add(t)
     db.session.commit()
 
     return jsonify({"status": "ok", "msg": "✅ Geld erfolgreich gesendet!"})
